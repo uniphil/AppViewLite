@@ -124,7 +124,7 @@ namespace AppViewLite.Web
                 await next();
             });
 
-            // app.UseHttpsRedirection();
+            app.UseHttpsRedirection();
 
             app.UseStatusCodePagesWithReExecute("/ErrorHttpStatus", "?code={0}");
             app.UseAntiforgery();
