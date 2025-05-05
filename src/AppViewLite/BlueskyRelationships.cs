@@ -264,11 +264,11 @@ namespace AppViewLite
             checkpointsDir.Create();
             var latestCheckpoint = checkpointsDir.EnumerateFiles("*.pb").MaxBy(x => (DateTime?)x.LastWriteTimeUtc);
             if (latestCheckpoint == null && !AppViewLiteConfiguration.GetBool(AppViewLiteParameter.APPVIEWLITE_ALLOW_NEW_DATABASE).GetValueOrDefault())
-                throw new Exception("A checkpoint file to load was not found. Specify --allow-new-database to create a new database.");
+                throw new Exception("A checkpoint file to load was not found. Specify '--allow-new-database 1' to create a new database.");
             loadedCheckpoint = latestCheckpoint != null ? DeserializeProto<GlobalCheckpoint>(File.ReadAllBytes(latestCheckpoint.FullName)) : new GlobalCheckpoint();
             checkpointToLoad = (loadedCheckpoint.Tables ?? []).ToDictionary(x => x.Name, x => (x.Slices ?? []).Select(x => x.ToSliceName()).ToArray());
 
-            var resetFirehoseCursors = AppViewLiteConfiguration.GetStringList(AppViewLiteParameter.APPVIEWLITE_RESET_FIREHOSE_CURSORS) ?? [];
+            var resetFirehoseCursors = AppViewLiteConfiguration.GetStringList(AppViewLiteParameter.APPVIEWLITE_RESET_FIREHOSE_CURSORS) ?? ["*"];
             firehoseCursors = loadedCheckpoint?.FirehoseCursors?
                 .Select(x => { x.MakeUtc(); return x; })
                 .Where(x => !(resetFirehoseCursors.Contains(x.FirehoseUrl) || resetFirehoseCursors.Contains("*")))
@@ -501,6 +501,7 @@ namespace AppViewLite
         {
             if (newTable.KeyCount != 0) return;
             Assert(newTable.Behavior == oldTable.Behavior);
+            if (oldTable.KeyCount == 0) return; // new database, avoid log noise
             Log("Migrating: " + newTable.Name);
             if (newTable.Behavior == PersistentDictionaryBehavior.PreserveOrder)
             {
@@ -3686,7 +3687,7 @@ namespace AppViewLite
             if (likeCount == 0 && couldBePluggablePost)
             {
                 var did = GetDid(postId.Author);
-                if (TryGetPluggableProtocolForDid(did) is { } pluggable && pluggable.ProvidesLikeCount)
+                if (TryGetPluggableProtocolForDid(did) is { } pluggable && pluggable.ProvidesLikeCount(did))
                 {
                     if (RecentPluggablePostLikeCount.TryGetLatestValue(postId, out var pluggableLikeCount))
                         likeCount = pluggableLikeCount;

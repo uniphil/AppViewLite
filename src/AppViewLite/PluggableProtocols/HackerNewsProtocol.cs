@@ -17,6 +17,9 @@ namespace AppViewLite.PluggableProtocols.HackerNews
         }
         public async override Task DiscoverAsync(CancellationToken ct)
         {
+            if (!AppViewLiteConfiguration.GetBool(AppViewLiteParameter.APPVIEWLITE_ENABLE_HACKERNEWS, false))
+                return;
+
             await PluggableProtocol.RetryInfiniteLoopAsync("HackerNews", async ct =>
             {
 
@@ -150,7 +153,7 @@ namespace AppViewLite.PluggableProtocols.HackerNews
         {
             return false;
         }
-        public override bool ProvidesLikeCount => true;
+        public override bool ProvidesLikeCount(string did) => true;
 
         public override string? GetDisplayHandle(BlueskyProfile profile)
         {

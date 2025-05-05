@@ -157,6 +157,7 @@ var liveUpdatesConnectionFuture = (async () => {
             return;
         }
         var newnode = parseHtmlAsElement(html);
+        newnode.didAppearInViewport = oldnode.didAppearInViewport;
         oldnode.replaceWith(newnode);
         //if (newnode.querySelector(".post-quoted[data-pendingload='1']"))
 
@@ -642,7 +643,7 @@ function applyPageElements() {
                     while (postToMarkAsRead) {
                         if (postToMarkAsRead.classList.contains('post')) {
                             if (postToMarkAsRead.wasMarkedAsRead) break;
-                            if (postToMarkAsRead.getBoundingClientRect().bottom < 0 && postToMarkAsRead.didAppearInViewport) {
+                            if (postToMarkAsRead.didAppearInViewport) {
                                 //console.log('Mark as read: ' + getPostText(postToMarkAsRead));
                                 recordPostEngagement(postToMarkAsRead, 'None');
                             }
@@ -1023,6 +1024,16 @@ function recurseUntilVisible(node, f) {
 
 function onInitialLoad() {
     if (isNoLayout) return;
+
+    var ssr = document.documentElement.dataset.ssrPageUrl;
+    if (ssr) { 
+        var originAspNet = new URL(ssr).origin;
+        var originJs = location.origin;
+        if (originAspNet != originJs) { 
+            document.querySelector('.sidebar').insertAdjacentHTML('afterBegin', "<div style=\"font-size: 8pt; color: rgb(126, 27, 27);\">Your reverse proxy is not forwarding X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host.<br><br>Some generated links might be broken (" + originJs + " vs " + originAspNet + ")<br><br>If your reverse proxy is not on localhost, you might also need to configure ForwardedHeadersOptions.KnownProxies</div>")
+        }
+    }
+
     window.addEventListener('beforeunload', e => {
         console.log('beforeunload event triggered.')
     });
