@@ -241,6 +241,7 @@ namespace AppViewLite
             }, ctx);
         }
 
+
         public async Task<BlueskyProfile[]> EnrichAsync(BlueskyProfile[] profiles, RequestContext ctx, Action<BlueskyProfile>? onLateDataAvailable = null, bool omitLabelsAndViewerFlags = false, CancellationToken ct = default)
         {
             if (profiles.Length == 0) return profiles;
@@ -525,6 +526,7 @@ namespace AppViewLite
 
         public readonly static FrozenSet<string> ExternalDomainsAlwaysCompactView = (AppViewLiteConfiguration.GetStringList(AppViewLiteParameter.APPVIEWLITE_EXTERNAL_PREVIEW_SMALL_THUMBNAIL_DOMAINS) ?? []).ToFrozenSet();
         public readonly static FrozenSet<string> ExternalDomainsNoAutoPreview = (AppViewLiteConfiguration.GetStringList(AppViewLiteParameter.APPVIEWLITE_EXTERNAL_PREVIEW_DISABLE_AUTOMATIC_FOR_DOMAINS) ?? []).ToFrozenSet();
+        public readonly static FrozenSet<string> ExternalDomainsIgnoreDescription = (AppViewLiteConfiguration.GetStringList(AppViewLiteParameter.APPVIEWLITE_EXTERNAL_PREVIEW_IGNORE_DESCRIPTION_FOR_DOMAINS) ?? []).ToFrozenSet();
 
         public async Task<BlueskyPost[]> EnrichAsync(BlueskyPost[] posts, RequestContext ctx, Action<BlueskyPost>? onPostDataAvailable = null, bool loadQuotes = true, bool sideWithQuotee = false, Plc? focalPostAuthor = null, CancellationToken ct = default)
         {
@@ -3159,7 +3161,7 @@ namespace AppViewLite
             return GetPageAndNextPaginationFromLimitPlus1(lists, limit, x => new ListMembership(x.Moderator!.Plc, x.ListId.RelationshipRKey, x.MembershipRkey!.Value).Serialize());
         }
 
-        private async Task<BlueskyFeedGenerator[]> EnrichAsync(BlueskyFeedGenerator[] feeds, RequestContext ctx, CancellationToken ct = default)
+        public async Task<BlueskyFeedGenerator[]> EnrichAsync(BlueskyFeedGenerator[] feeds, RequestContext ctx, CancellationToken ct = default)
         {
             if (feeds.Length == 0) return feeds;
 
@@ -3315,7 +3317,8 @@ namespace AppViewLite
                 {
                     var listItem = (FishyFlip.Lexicon.App.Bsky.Graph.Listitem)x.Value!;
                     if (listItem.List!.Rkey != rkey) return null;
-                    return rels.GetProfile(rels.SerializeDid(listItem.Subject!.Handler, ctx), ctx);
+                    var profile = rels.GetProfile(rels.SerializeDid(listItem.Subject!.Handler, ctx), Tid.Parse(x.Uri.Rkey), ctx);
+                    return profile;
                 }).WhereNonNull().ToArray();
             }, ctx);
             await EnrichAsync(members, ctx);
@@ -4950,6 +4953,13 @@ namespace AppViewLite
             ctx.IncreaseTimeout(TimeSpan.FromSeconds(3));
             await EnrichAsync(labels, ctx);
             return labels;
+        }
+
+        public async Task<BlueskyList> GetListMetadataAsync(string did, string rkey, RequestContext ctx)
+        {
+            var list = WithRelationshipsLockForDid(did, (plc, rels) => rels.GetList(new Relationship(plc, Tid.Parse(rkey))), ctx);
+            await EnrichAsync([list], ctx);
+            return list;
         }
     }
 

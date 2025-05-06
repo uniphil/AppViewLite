@@ -64,6 +64,8 @@ namespace AppViewLite
                     var name = arg.Substring(2).ToUpperInvariant().Replace('-', '_');
                     if (!name.StartsWith("APPVIEWLITE_", StringComparison.Ordinal))
                         name = "APPVIEWLITE_" + name;
+                    if (name.Contains('='))
+                        throw new ArgumentException("Command line arguments must be passed as '--name value', not '--name=value': " + name);
                     if (!Enum.TryParse<AppViewLiteParameter>(name, false, out _))
                         throw new ArgumentException("Unrecognized argument: " + arg);
                     if (i == args.Length - 1 || args[i + 1].StartsWith("--", StringComparison.Ordinal))
@@ -175,6 +177,7 @@ namespace AppViewLite
         APPVIEWLITE_ENABLE_RSS,
         APPVIEWLITE_MAX_QPS_BY_HOST,
         APPVIEWLITE_BIND_URLS,
+        APPVIEWLITE_EXTERNAL_PREVIEW_IGNORE_DESCRIPTION_FOR_DOMAINS,
     }
 }
 

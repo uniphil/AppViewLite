@@ -1,3 +1,4 @@
+using AppViewLite.Models;
 using FishyFlip.Lexicon.App.Bsky.Actor;
 using FishyFlip.Lexicon.App.Bsky.Feed;
 using Microsoft.AspNetCore.Cors;
@@ -27,19 +28,58 @@ namespace AppViewLite.Web
             return profile.ToApiCompatProfileDetailed().ToJsonResponse();
         }
 
-        [HttpGet("app.bsky.actor.searchActorsTypeahead")]
-        public Task<IResult> SearchActorsTypeahead(string q, int limit)
+        [HttpGet("app.bsky.actor.getProfiles")]
+        public async Task<IResult> GetProfiles(string[] actors)
         {
-            return Task.FromResult(new SearchActorsTypeaheadOutput
+            if (actors.Length == 0) return new GetProfilesOutput { Profiles = [] }.ToJsonResponse();
+
+            // TODO: where is getProfiles used?
+
+            if (actors.Length == 1) return new GetProfilesOutput { Profiles = [ApiCompatUtils.ToApiCompatProfileDetailed(await apis.GetFullProfileAsync(actors[0], ctx, 0))] }.ToJsonResponse();
+            var profiles = apis.WithRelationshipsLockForDids(actors, (plcs, rels) =>
             {
-                Actors = []
-            }.ToJsonResponse());
+                return plcs.Select(x =>
+                {
+                    var p = rels.GetProfile(x, ctx);
+                    return new BlueskyFullProfile
+                    {
+                        Profile = p,
+                    };
+                }).ToArray();
+            }, ctx);
+            await apis.EnrichAsync(profiles.Select(x => x.Profile).ToArray(), ctx);
+            return new GetProfilesOutput
+            {
+
+                Profiles = profiles.Select(x => ApiCompatUtils.ToApiCompatProfileDetailed(x)).ToList(),
+            }.ToJsonResponse();
+        }
+
+        [HttpGet("app.bsky.actor.searchActorsTypeahead")]
+        public async Task<IResult> SearchActorsTypeahead(string q, int limit)
+        {
+            var results = await apis.SearchProfilesAsync(q, allowPrefixForLastWord: true, null, limit, ctx);
+            return new SearchActorsTypeaheadOutput
+            {
+                Actors = results.Profiles.Select(x => ApiCompatUtils.ToApiCompatProfileViewBasic(x)).ToList(),
+            }.ToJsonResponse();
         }
 
         [HttpGet("app.bsky.actor.searchActors")]
-        public Task<IResult> SearchActors(string q, int limit, string? cursor)
+        public async Task<IResult> SearchActors(string q, int limit, string? cursor)
         {
-            return Task.FromResult(new SearchActorsOutput
+            var results = await apis.SearchProfilesAsync(q, allowPrefixForLastWord: false, cursor, limit, ctx);
+            return new SearchActorsOutput
+            {
+                Cursor = results.NextContinuation,
+                Actors = results.Profiles.Select(x => ApiCompatUtils.ToApiCompatProfile(x)).ToList(),
+            }.ToJsonResponse();
+        }
+
+        [HttpGet("app.bsky.actor.getSuggestions")]
+        public Task<IResult> GetSuggestions(int limit, string? cursor)
+        {
+            return Task.FromResult(new GetSuggestionsOutput
             {
                 Actors = []
             }.ToJsonResponse());

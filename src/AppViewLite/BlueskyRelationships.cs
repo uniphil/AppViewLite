@@ -200,9 +200,9 @@ namespace AppViewLite
             return default;
         }
 
-        private RelationshipDictionary<TTarget> RegisterRelationshipDictionary<TTarget>(string name, Func<TTarget, bool, UInt24?>? targetToApproxTarget, RelationshipProbabilisticCache<TTarget>? relationshipCache = null, Func<TTarget, MultiDictionaryIoPreference>? getCreationsIoPreferenceForKey = null, KeyProbabilisticCache<Relationship, DateTime>? deletionProbabilisticCache = null) where TTarget : unmanaged, IComparable<TTarget>
+        private RelationshipDictionary<TTarget> RegisterRelationshipDictionary<TTarget>(string name, Func<TTarget, bool, UInt24?>? targetToApproxTarget, RelationshipProbabilisticCache<TTarget>? relationshipCache = null, Func<TTarget, MultiDictionaryIoPreference>? getCreationsIoPreferenceForKey = null, KeyProbabilisticCache<Relationship, DateTime>? deletionProbabilisticCache = null, bool zeroApproxTargetsAreValid = false) where TTarget : unmanaged, IComparable<TTarget>
         {
-            return Register(new RelationshipDictionary<TTarget>(BaseDirectory, name, checkpointToLoad!, targetToApproxTarget, relationshipCache, getCreationsIoPreferenceForKey, deletionProbabilisticCache: deletionProbabilisticCache)
+            return Register(new RelationshipDictionary<TTarget>(BaseDirectory, name, checkpointToLoad!, targetToApproxTarget, relationshipCache, getCreationsIoPreferenceForKey, deletionProbabilisticCache: deletionProbabilisticCache, zeroApproxTargetsAreValid: zeroApproxTargetsAreValid)
             {
                 GetVersion = () => this.Version
             });
@@ -286,8 +286,8 @@ namespace AppViewLite
 
             Likes = RegisterRelationshipDictionary<PostIdTimeFirst>("post-like-time-first", GetApproxTime24); //, new(1024 * 1024 * 1024, 6));
             Reposts = RegisterRelationshipDictionary<PostIdTimeFirst>("post-repost-time-first", GetApproxTime24); //, new(256 * 1024 * 1024, 10));
-            Follows = RegisterRelationshipDictionary<Plc>("follow", GetApproxPlc24, new(256 * 1024 * 1024, 6), _ => MultiDictionaryIoPreference.KeysAndOffsetsMmap, deletionProbabilisticCache: new KeyProbabilisticCache<Relationship, DateTime>(128 * 1024 * 1024, 4));
-            Blocks = RegisterRelationshipDictionary<Plc>("block", GetApproxPlc24, new(64 * 1024 * 1024, 4));
+            Follows = RegisterRelationshipDictionary<Plc>("follow", GetApproxPlc24, new(256 * 1024 * 1024, 6), _ => MultiDictionaryIoPreference.KeysAndOffsetsMmap, deletionProbabilisticCache: new KeyProbabilisticCache<Relationship, DateTime>(128 * 1024 * 1024, 4), zeroApproxTargetsAreValid: true);
+            Blocks = RegisterRelationshipDictionary<Plc>("block", GetApproxPlc24, new(64 * 1024 * 1024, 4), zeroApproxTargetsAreValid: true);
 
             Bookmarks = RegisterDictionary<Plc, BookmarkPostFirst>("bookmark");
             RecentBookmarks = RegisterDictionary<Plc, BookmarkDateFirst>("bookmark-recent");
@@ -357,7 +357,7 @@ namespace AppViewLite
             AppViewLiteProfiles = RegisterDictionary<Plc, byte>("appviewlite-profile", PersistentDictionaryBehavior.PreserveOrder);
             FeedGenerators = RegisterDictionary<RelationshipHashedRKey, byte>("feed-generator", PersistentDictionaryBehavior.PreserveOrder);
             FeedGeneratorSearch = RegisterDictionary<HashedWord, RelationshipHashedRKey>("feed-generator-search");
-            FeedGeneratorLikes = RegisterRelationshipDictionary<RelationshipHashedRKey>("feed-generator-like-2", GetApproxRkeyHash24);
+            FeedGeneratorLikes = RegisterRelationshipDictionary<RelationshipHashedRKey>("feed-generator-like-2", GetApproxRkeyHash24, zeroApproxTargetsAreValid: true);
             FeedGeneratorDeletions = RegisterDictionary<RelationshipHashedRKey, DateTime>("feed-deletion");
             DidDocs = RegisterDictionary<Plc, byte>("did-doc-6", PersistentDictionaryBehavior.PreserveOrder, caches: [new WhereSelectCache<Plc, byte, Plc, byte>("labeler", PersistentDictionaryBehavior.PreserveOrder, (plc, diddocBytes) =>
             {
@@ -483,7 +483,7 @@ namespace AppViewLite
                 var potentiallyCorrupt = AllMultidictionaries.SelectMany(x => x.GetPotentiallyCorruptFiles()).ToArray();
                 if (potentiallyCorrupt.Length != 0)
                 {
-                    Log("The following slices begin or end with many NUL bytes and are possibly corrupt. This can happen after an abrupt system power-off. Consider manually reverting to a previous checkpoint file.");
+                    Log("The following slices begin or end with many NUL bytes and are possibly corrupt. This can happen after an abrupt system power-off. Consider manually reverting to a previous checkpoint file. This might also be a false positive (https://github.com/alnkesq/AppViewLite/issues/219). In such case, set APPVIEWLITE_CHECK_NUL_FILES to 0.");
                     foreach (var item in potentiallyCorrupt)
                     {
                         Log(item);
@@ -2177,7 +2177,7 @@ namespace AppViewLite
             {
                 Profile = GetProfile(plc, ctx),
                 Followers = Follows.GetActorCount(plc),
-                FollowedByPeopleYouFollow = ctx.IsLoggedIn ? GetFollowersYouFollow(plc, ctx.LoggedInUser)?.Select((x, i) => i < followersYouFollowToLoad ? GetProfile(x, ctx, canOmitDescription: true) : new BlueskyProfile { PlcId = x.PlcValue, Did = null! }).ToList() : null,
+                FollowedByPeopleYouFollow = ctx.IsLoggedIn && followersYouFollowToLoad != 0 ? GetFollowersYouFollow(plc, ctx.LoggedInUser)?.Select((x, i) => i < followersYouFollowToLoad ? GetProfile(x, ctx, canOmitDescription: true) : new BlueskyProfile { PlcId = x.PlcValue, Did = null! }).ToList() : null,
                 HasFeeds = FeedGenerators.GetInRangeUnsorted(new RelationshipHashedRKey(plc, 0), new RelationshipHashedRKey(plc.GetNext(), 0)).Any(),
                 HasLists = Lists.GetInRangeUnsorted(new Relationship(plc, default), new Relationship(plc.GetNext(), default)).Any(),
             };
@@ -2410,7 +2410,15 @@ namespace AppViewLite
 
         internal void ClearLockLocalCache()
         {
-            _lockLocalCaches.Value = new();
+            try
+            {
+                _lockLocalCaches.Value = new();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already disposed, and our callees (WithRelationshipsXxxxLock) must not fail (they must release the locks).
+                // Subsequent reads from _lockLocalCaches.Value will fail anyway, no need to worry about stale data in them
+            }
         }
 
         private readonly ThreadLocal<LockLocalCaches> _lockLocalCaches = new();
